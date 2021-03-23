@@ -16,8 +16,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/containers/podman/v3/pkg/errorhandling"
-	"github.com/containers/podman/v3/pkg/rootlessport"
+	"github.com/containers/podman/v2/pkg/errorhandling"
+	"github.com/containers/podman/v2/pkg/rootlessport"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
