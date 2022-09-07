@@ -8,7 +8,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"text/template"
 
 	"github.com/containers/common/pkg/completion"
 	"github.com/containers/common/pkg/report"
@@ -201,10 +200,14 @@ func (i *inspector) inspect(namesOrIDs []string) error {
 		err = printJSON(data)
 	default:
 		// Landing here implies user has given a custom --format
-		row := inspectNormalize(i.options.Format, tmpType)
-		row = report.NormalizeFormat(row)
-		row = report.EnforceRange(row)
-		err = printTmpl(tmpType, row, data)
+		var rpt *report.Formatter
+		rpt, err = report.New(os.Stdout, "inspect").Parse(report.OriginUser, i.options.Format)
+		if err != nil {
+			return err
+		}
+		defer rpt.Flush()
+
+		err = rpt.Execute(data)
 	}
 	if err != nil {
 		logrus.Errorf("Printing inspect output: %v", err)
@@ -228,22 +231,6 @@ func printJSON(data []interface{}) error {
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "     ")
 	return enc.Encode(data)
-}
-
-func printTmpl(typ, row string, data []interface{}) error {
-	// We cannot use c/common/reports here, too many levels of interface{}
-	t, err := template.New(typ + " inspect").Funcs(template.FuncMap(report.DefaultFuncs)).Parse(row)
-	if err != nil {
-		return err
-	}
-
-	w, err := report.NewWriterDefault(os.Stdout)
-	if err != nil {
-		return err
-	}
-	err = t.Execute(w, data)
-	w.Flush()
-	return err
 }
 
 func (i *inspector) inspectAll(ctx context.Context, namesOrIDs []string) ([]interface{}, []error, error) {
