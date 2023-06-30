@@ -88,9 +88,16 @@ var _ = Describe("Podman top", func() {
 	})
 
 	It("podman top with ps(1) options", func() {
-		session := podmanTest.Podman([]string{"run", "-d", ALPINE, "top", "-d", "2"})
+		session := podmanTest.Podman([]string{"run", "-d", fedoraMinimal, "sleep", "inf"})
 		session.WaitWithDefaultTimeout()
 		Expect(session).Should(Exit(0))
+
+		// Extra check: Make sure the container image does not contain ps(1)
+		// podman top must work without that
+		exec := podmanTest.Podman([]string{"exec", session.OutputToString(), "ps"})
+		exec.WaitWithDefaultTimeout()
+		Expect(exec).Should(Exit(127))
+		Expect(exec.ErrorToString()).Should(ContainSubstring("OCI runtime attempted to invoke a command that was not found"))
 
 		result := podmanTest.Podman([]string{"top", session.OutputToString(), "aux"})
 		result.WaitWithDefaultTimeout()
@@ -100,7 +107,7 @@ var _ = Describe("Podman top", func() {
 		result = podmanTest.Podman([]string{"top", session.OutputToString(), "ax -o args"})
 		result.WaitWithDefaultTimeout()
 		Expect(result).Should(Exit(0))
-		Expect(result.OutputToStringArray()).To(Equal([]string{"COMMAND", "top -d 2"}))
+		Expect(result.OutputToStringArray()).To(Equal([]string{"COMMAND", "sleep inf"}))
 	})
 
 	It("podman top with comma-separated options", func() {

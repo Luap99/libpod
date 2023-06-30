@@ -5,9 +5,13 @@ package libpod
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"path"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -16,6 +20,7 @@ import (
 	"github.com/containers/psgo"
 	"github.com/google/shlex"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sys/unix"
 )
 
 // Top gathers statistics about the running processes in a container. It returns a
@@ -113,27 +118,19 @@ func (c *Container) GetContainerPidInformation(descriptors []string) ([]string, 
 	return res, nil
 }
 
-// execPS executes ps(1) with the specified args in the container.
-func (c *Container) execPS(args []string) ([]string, error) {
+// execute ps(1) from the host within the container mountns
+// This is done by first lookup the ps host path and open a fd for it,
+// then read all linked libs from it then open them as well, (including the linker).
+// Then we can join the pid and mountns, lastly execute the linker directly via
+// /proc/self/fd/X and use --preload to set all shared libs as well.
+// That way we open everything on the host and do not depend on any container libs.
+func (c *Container) execPS(psArgs []string) ([]string, error) {
 	rPipe, wPipe, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
 	defer wPipe.Close()
 	defer rPipe.Close()
-
-	rErrPipe, wErrPipe, err := os.Pipe()
-	if err != nil {
-		return nil, err
-	}
-	defer wErrPipe.Close()
-	defer rErrPipe.Close()
-
-	streams := new(define.AttachStreams)
-	streams.OutputStream = wPipe
-	streams.ErrorStream = wErrPipe
-	streams.AttachOutput = true
-	streams.AttachError = true
 
 	stdout := []string{}
 	go func() {
@@ -142,31 +139,125 @@ func (c *Container) execPS(args []string) ([]string, error) {
 			stdout = append(stdout, scanner.Text())
 		}
 	}()
-	stderr := []string{}
-	go func() {
-		scanner := bufio.NewScanner(rErrPipe)
-		for scanner.Scan() {
-			stderr = append(stderr, scanner.Text())
-		}
-	}()
 
-	cmd := append([]string{"ps"}, args...)
-	config := new(ExecConfig)
-	config.Command = cmd
-	ec, err := c.Exec(config, streams, nil)
+	psPath, err := exec.LookPath("ps")
 	if err != nil {
 		return nil, err
-	} else if ec != 0 {
-		return nil, fmt.Errorf("runtime failed with exit status: %d and output: %s", ec, strings.Join(stderr, " "))
 	}
+	psFD, err := unix.Open(psPath, unix.O_PATH, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer unix.Close(psFD)
+	logrus.Debugf("Trying to execute %q from the host in the container", psPath)
+	psPath = fmt.Sprintf("/proc/self/fd/%d", psFD)
 
-	if logrus.GetLevel() >= logrus.DebugLevel {
-		// If we're running in debug mode or higher, we might want to have a
-		// look at stderr which includes debug logs from conmon.
-		for _, log := range stderr {
-			logrus.Debugf("%s", log)
+	args := append([]string{psPath}, psArgs...)
+
+	// Now get all shared libs from ps(1), if this fails it is likely a static
+	// binary so no further actin required.
+	cmd := exec.Command("ldd", psPath)
+	output, err := cmd.Output()
+	if err == nil {
+		logrus.Debug("ps is dynamically linked, open linker and shared libraries for it")
+		var preload []string
+		var linkerPath string
+		for _, line := range strings.Split(string(output), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) > 3 {
+				// open the shared lib on the host as it will most likely not be in the container
+				logrus.Debugf("Open shared library for ps: %s", fields[2])
+				fd, err := unix.Open(fields[2], unix.O_PATH, 0)
+				if err == nil {
+					defer unix.Close(fd)
+					preload = append(preload, fmt.Sprintf("/proc/self/fd/%d", fd))
+				}
+			} else if len(fields) == 2 {
+				if path.IsAbs(fields[0]) {
+					// this should be the dynamic linker
+					logrus.Debugf("Using linker for ps: %s", fields[0])
+					linkFD, err := unix.Open(fields[0], unix.O_PATH|unix.O_CLOEXEC, 0)
+					if err != nil {
+						return nil, err
+					}
+					defer unix.Close(linkFD)
+					linkerPath = fmt.Sprintf("/proc/self/fd/%d", linkFD)
+				}
+			}
 		}
+		// Ok, set linker args. First overwrite argv[0] because busybox for example needs it to know
+		// which program to execute as everything is in one binary and they need to proper name.
+		// Second now preload all linked shared libs. This is to prevent the executable from loading
+		// any libs in the container and thus very likely failing.
+		args = append([]string{linkerPath, "--argv0", "ps", "--preload", strings.Join(preload, " ")}, args...)
 	}
 
-	return stdout, nil
+	pid := c.state.PID
+	errChan := make(chan error)
+	go func() {
+		defer close(errChan)
+
+		// DO NOT UNLOCK THIS THREAD!!!
+		// We are joining a different pid and mount ns, go must destroy the
+		// thread when we are done and not reuse it.
+		runtime.LockOSThread()
+
+		// join the mount namespace of pid
+		mntFD, err := os.Open(fmt.Sprintf("/proc/%d/ns/mnt", pid))
+		if err != nil {
+			errChan <- err
+			return
+		}
+		defer mntFD.Close()
+
+		// join the pid namespace of pid
+		pidFD, err := os.Open(fmt.Sprintf("/proc/%d/ns/pid", pid))
+		if err != nil {
+			errChan <- err
+			return
+		}
+		defer pidFD.Close()
+
+		// create a new mountns on the current thread
+		if err = unix.Unshare(unix.CLONE_NEWNS); err != nil {
+			errChan <- fmt.Errorf("unshare NEWNS: %w", err)
+			return
+		}
+		if err := unix.Setns(int(mntFD.Fd()), unix.CLONE_NEWNS); err != nil {
+			errChan <- fmt.Errorf("setns NEWNS: %w", err)
+			return
+		}
+
+		if err := unix.Setns(int(pidFD.Fd()), unix.CLONE_NEWPID); err != nil {
+			errChan <- fmt.Errorf("setns NEWPID: %w", err)
+			return
+		}
+
+		logrus.Debugf("Executing ps in the containers mnt+pid namespace, final command: %v", args)
+		var errBuf bytes.Buffer
+		path := args[0]
+		args[0] = "ps"
+		cmd := exec.Cmd{
+			Path:   path,
+			Args:   args,
+			Stdout: wPipe,
+			Stderr: &errBuf,
+		}
+
+		err = cmd.Run()
+		if err != nil {
+			exitError := &exec.ExitError{}
+			if errors.As(err, &exitError) && errBuf.Len() > 0 {
+				// when error printed on stderr include it in error
+				err = fmt.Errorf("ps failed with exit code %d: %s", exitError.ExitCode(), errBuf.String())
+			} else {
+				err = fmt.Errorf("could not execute ps in the container: %w", err)
+			}
+		}
+		errChan <- err
+	}()
+
+	// the channel blocks and waits for command completion
+	err = <-errChan
+	return stdout, err
 }
