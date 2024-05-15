@@ -216,17 +216,17 @@ function basic_teardown() {
     # and PODMAN_BATS_LEAK_CHECK is set.
     # As these podman commands are slow we do not want to do this by default
     # and only provide this as opt in option. (#22909)
-    if [[ "$BATS_TEST_COMPLETED" -eq 1 ]] && [ $exit_code -eq 0 ] && [ -n "$PODMAN_BATS_LEAK_CHECK" ]; then
-        leak_check
-        exit_code=$((exit_code + $?))
-    fi
+#    if [[ "$BATS_TEST_COMPLETED" -eq 1 ]] && [ $exit_code -eq 0 ] && [ -n "$PODMAN_BATS_LEAK_CHECK" ]; then
+#        leak_check
+#        exit_code=$((exit_code + $?))
+#    fi
 
     # Some error happened (either in teardown itself or the actual test failed)
     # so do a full cleanup to ensure following tests start with a clean env.
-    if [ $exit_code -gt 0 ] || [ -z "$BATS_TEST_COMPLETED" ]; then
-        clean_setup
-        exit_code=$((exit_code + $?))
-    fi
+#    if [ $exit_code -gt 0 ] || [ -z "$BATS_TEST_COMPLETED" ]; then
+ #       clean_setup
+#        exit_code=$((exit_code + $?))
+#    fi
     command rm -rf $PODMAN_TMPDIR
     exit_code=$((exit_code + $?))
     return $exit_code

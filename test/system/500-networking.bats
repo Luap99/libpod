@@ -48,7 +48,8 @@ load helpers.network
     echo $random_1 > $INDEX1
 
     # Bind-mount this file with a different name to a container running httpd
-    run_podman run -d --name myweb -p "$HOST_PORT:80" \
+    cname="c-$(safename)"
+    run_podman run -d --name $cname -p "$HOST_PORT:80" \
             -v $INDEX1:/var/www/index.txt:Z \
             -w /var/www \
             $IMAGE /bin/busybox-extras httpd -f -p 80
@@ -64,9 +65,9 @@ load helpers.network
     assert "$output" =~ "$HOST_PORT.*ddress already in use" "port in use"
 
     # In that container, create a second file, using exec and redirection
-    run_podman exec -i myweb sh -c "cat > index2.txt" <<<"$random_2"
+    run_podman exec -i $cname sh -c "cat > index2.txt" <<<"$random_2"
     # ...verify its contents as seen from container.
-    run_podman exec -i myweb cat /var/www/index2.txt
+    run_podman exec -i $cname cat /var/www/index2.txt
     is "$output" "$random_2" "exec cat index2.txt"
 
     # Verify http contents: curl from localhost
@@ -82,18 +83,18 @@ load helpers.network
     is "$output" "$random_2" "podman wget /index2.txt"
 
     # Tests #4889 - two-argument form of "podman ports" was broken
-    run_podman port myweb
+    run_podman port $cname
     is "$output" "80/tcp -> 0.0.0.0:$HOST_PORT" "port <cid>"
-    run_podman port myweb 80
+    run_podman port $cname 80
     is "$output" "0.0.0.0:$HOST_PORT"  "port <cid> 80"
-    run_podman port myweb 80/tcp
+    run_podman port $cname 80/tcp
     is "$output" "0.0.0.0:$HOST_PORT"  "port <cid> 80/tcp"
 
-    run_podman 125 port myweb 99/tcp
+    run_podman 125 port $cname 99/tcp
     is "$output" 'Error: failed to find published port "99/tcp"'
 
     # Clean up
-    run_podman rm -f -t0 myweb
+    run_podman rm -f -t0 $cname
 }
 
 # Issue #5466 - port-forwarding doesn't work with this option and -d
@@ -237,10 +238,11 @@ load helpers.network
 }
 
 # "network create" now works rootless, with the help of a special container
+# bats test_tags=ci:parallel
 @test "podman network create" {
     myport=$(random_free_port)
 
-    local mynetname=testnet-$(random_string 10)
+    local mynetname=testnet-$(safename)
     local mysubnet=$(random_rfc1918_subnet)
 
     run_podman network create --subnet "${mysubnet}.0/24" $mynetname
@@ -254,7 +256,8 @@ load helpers.network
     is "$output" ".* inet ${mysubnet}\.2/24 brd ${mysubnet}\.255 " \
        "sdfsdf"
 
-    run_podman run -d --network $mynetname -p 127.0.0.1:$myport:$myport \
+    local cname="c-$(safename)"
+    run_podman run -d --network $mynetname --name $cname -p 127.0.0.1:$myport:$myport \
                $IMAGE nc -l -n -v -p $myport
     cid="$output"
 
