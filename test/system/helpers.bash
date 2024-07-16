@@ -420,12 +420,12 @@ function clean_setup() {
         else
             # Always remove image that doesn't match by name
             echo "# setup(): removing stray image $1" >&3
-            run_podman rmi --force "$1" >/dev/null 2>&1 || true
+            _run_podman_quiet rmi --force "$1"
 
             # Tagged image will have same IID as our test image; don't rmi it.
             if [[ $2 != "$PODMAN_TEST_IMAGE_ID" ]]; then
                 echo "# setup(): removing stray image $2" >&3
-                run_podman rmi --force "$2" >/dev/null 2>&1 || true
+                _run_podman_quiet rmi --force "$2"
             fi
         fi
     done
