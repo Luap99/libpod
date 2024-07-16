@@ -3,23 +3,21 @@
 # Test podman play
 #
 
+# All tests here can be run in parallel
+# bats file_tags=ci:parallel
+
 load helpers
 load helpers.network
 load helpers.registry
 
-# This is a long ugly way to clean up pods and remove the pause image
-function teardown() {
-    run_podman pod rm -t 0 -f -a
-    run_podman rm -t 0 -f -a
-    run_podman image list --format '{{.ID}} {{.Repository}}'
-    while read id name; do
-        if [[ "$name" =~ /podman-pause ]]; then
-            run_podman rmi $id
-        fi
-    done <<<"$output"
-    run_podman network rm -f podman-default-kube-network
-
-    basic_teardown
+# Create and delete a pod. This gives us a pause image.
+# FIXME: this should not be necessary. #23292
+function setup_file() {
+    podname="p-$(safename)"
+    run_podman pod create $podname
+    run_podman pod rm $podname
+    # And now, we have a pause image, and each test does not
+    # need to build their own.
 }
 
 # helper function: writes a yaml file with customizable values
@@ -661,8 +659,15 @@ spec:
     PODMAN_TIMEOUT=2 run_podman 124 kube play --wait $fname
     local t1=$SECONDS
     local delta_t=$((t1 - t0))
-    assert $delta_t -le 4 \
-           "podman kube play did not get killed within 3 seconds"
+
+    # Expectation (in seconds) of when we should time out. When running
+    # parallel, allow 2 more seconds due to system load
+    local expect=4
+    if [[ -n "$PARALLEL_JOBSLOT" ]]; then
+        expect=$((expect + 2))
+    fi
+    assert $delta_t -le $expect \
+           "podman kube play did not get killed within $expect seconds"
     # Make sure we actually got SIGTERM and podman printed its message.
     assert "$output" =~ "Cleaning up containers, pods, and volumes" "kube play printed sigterm message"
 
