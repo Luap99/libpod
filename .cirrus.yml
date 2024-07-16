@@ -843,7 +843,7 @@ local_system_test_task: &local_system_test_task
         (changesInclude('**/*.go', '**/*.c', '**/*.h') && !changesIncludeOnly('test/**', 'pkg/machine/e2e/**'))
     depends_on: *build
     matrix: *platform_axis
-    gce_instance: *standardvm
+    gce_instance: *fastvm
     env:
         TEST_FLAVOR: sys
     clone_script: *get_gosrc
@@ -896,7 +896,7 @@ rootless_remote_system_test_task:
               CTR_FQIN: ${FEDORA_CONTAINER_FQIN}
     <<: *local_system_test_task
     alias: rootless_remote_system_test
-    gce_instance: *standardvm
+    gce_instance: *fastvm
     env:
         TEST_FLAVOR: sys
         PODBIN_NAME: remote
@@ -910,7 +910,7 @@ rootless_system_test_task:
     only_if: *only_if_system_test
     depends_on: *build
     matrix: *platform_axis
-    gce_instance: *standardvm
+    gce_instance: *fastvm
     env:
         TEST_FLAVOR: sys
         PRIV_NAME: rootless
