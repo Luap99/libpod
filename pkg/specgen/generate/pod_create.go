@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -42,8 +43,31 @@ func MakePod(p *entities.PodSpec, rt *libpod.Runtime) (_ *libpod.Pod, finalErr e
 		if err != nil {
 			return nil, err
 		}
-		p.PodSpecGen.InfraImage = imageName
-		p.PodSpecGen.InfraContainerSpec.RawImageName = imageName
+		if len(imageName) > 0 {
+			p.PodSpecGen.InfraImage = imageName
+			p.PodSpecGen.InfraContainerSpec.RawImageName = imageName
+		} else {
+			// Also look into the path as some distributions install catatonit in
+			// /usr/bin.
+			rtConfig, err := rt.GetConfigNoCopy()
+			if err != nil {
+				return nil, err
+			}
+
+			catatonitPath, err := rtConfig.FindInitBinary()
+			if err != nil {
+				return nil, fmt.Errorf("finding pause binary: %w", err)
+			}
+			catatonitPath, err = filepath.EvalSymlinks(catatonitPath)
+			if err != nil {
+				return nil, fmt.Errorf("follow symlink to pause binary: %w", err)
+			}
+
+			p.PodSpecGen.InfraContainerSpec.Rootfs = filepath.Dir(catatonitPath)
+			overlay := true
+			p.PodSpecGen.InfraContainerSpec.RootfsOverlay = &overlay
+			p.PodSpecGen.InfraContainerSpec.Command = []string{"/" + filepath.Base(catatonitPath), "-P"}
+		}
 	}
 
 	spec, err := MapSpec(&p.PodSpecGen)

@@ -33,11 +33,11 @@ func PullOrBuildInfraImage(rt *libpod.Runtime, imageName string) (string, error)
 		return imageName, nil
 	}
 
-	name, err := buildPauseImage(rt, rtConfig)
-	if err != nil {
-		return "", fmt.Errorf("building local pause image: %w", err)
-	}
-	return name, nil
+	// name, err := buildPauseImage(rt, rtConfig)
+	// if err != nil {
+	// 	return "", fmt.Errorf("building local pause image: %w", err)
+	// }
+	return "", nil
 }
 
 func buildPauseImage(rt *libpod.Runtime, rtConfig *config.Config) (string, error) {

@@ -1701,6 +1701,8 @@ func (c *Container) mountStorage() (_ string, deferredErr error) {
 		}()
 	}
 
+	logrus.Error(c.config.Rootfs)
+
 	// Check if overlay has to be created on top of Rootfs
 	if c.config.RootfsOverlay {
 		overlayDest := c.runtime.GraphRoot()
