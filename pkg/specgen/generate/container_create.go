@@ -151,14 +151,6 @@ func MakeContainer(ctx context.Context, rt *libpod.Runtime, s *specgen.SpecGener
 		options = append(options, libpod.WithCreateCommand(s.ContainerCreateCommand))
 	}
 
-	if s.Rootfs != "" {
-		rootfsOverlay := false
-		if s.RootfsOverlay != nil {
-			rootfsOverlay = *s.RootfsOverlay
-		}
-		options = append(options, libpod.WithRootFS(s.Rootfs, rootfsOverlay, s.RootfsMapping))
-	}
-
 	newImage, resolvedImageName, imageData, err := getImageFromSpec(ctx, rt, s)
 	if err != nil {
 		return nil, nil, nil, err
