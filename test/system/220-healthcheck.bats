@@ -19,10 +19,12 @@ function _check_health {
 
     run_podman inspect --format "{{json .State.Healthcheck}}" $ctrname
 
+    defer-assertion-failures
     parse_table "$tests" | while read field expect;do
         actual=$(jq ".$field" <<<"$output")
         is "$actual" "$expect" "$testname - .State.Healthcheck.$field"
     done
+    immediate-assertion-failures
 
     # Make sure we can read the healthcheck event in podman events (#20342)
     run_podman events --filter container=$ctrname --filter event=health_status \
@@ -50,7 +52,7 @@ function _check_health {
     run_podman inspect $ctrname --format "{{.Config.HealthcheckOnFailureAction}}"
     is "$output" "kill" "on-failure action is set to kill"
 
-    current_time=$(date --iso-8601=seconds)
+    current_time=$(date --iso-8601=ns)
     # We can't check for 'starting' because a 1-second interval is too
     # short; it could run healthcheck before we get to our first check.
     #
@@ -65,7 +67,7 @@ Log[-1].ExitCode | 0
 Log[-1].Output   | \"Life is Good on stdout\\\nLife is Good on stderr\\\n\"
 " "$current_time" "healthy"
 
-    current_time=$(date --iso-8601=seconds)
+    current_time=$(date --iso-8601=ns)
     # Force a failure
     run_podman exec $ctrname touch /uh-oh
     sleep 2
@@ -81,7 +83,7 @@ Log[-1].Output   | \"Uh-oh on stdout!\\\nUh-oh on stderr!\\\n\"
     # name so that the leak check below does not turn into a NOP without noticing.
     assert "$(systemctl list-units --type timer | grep $cid)" =~ "podman" "Healthcheck systemd unit exists"
 
-    current_time=$(date --iso-8601=seconds)
+    current_time=$(date --iso-8601=ns)
     # After three successive failures, container should no longer be healthy
     sleep 5
     _check_health $ctrname "Three or more failures" "
