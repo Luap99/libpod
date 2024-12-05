@@ -34,6 +34,7 @@ var _ = Describe("Podman checkpoint", func() {
 
 	BeforeEach(func() {
 		SkipIfRootless("checkpoint not supported in rootless mode")
+		SkipOnOSVersion("fedora", "42", "checkpoint broken on new 6.13 rawhide kernel: https://bugzilla.redhat.com/show_bug.cgi?id=2328985")
 
 		// Check if the runtime implements checkpointing. Currently only
 		// runc's checkpoint/restore implementation is supported.
