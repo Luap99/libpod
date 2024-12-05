@@ -8,6 +8,10 @@ load helpers.network
 
 CHECKED_ROOTLESS=
 function setup() {
+    if grep -q ID=fedora /etc/os-release && grep -q VERSION_ID=42 /etc/os-release; then
+        skip "checkpoint broken on new 6.13 rawhide kernel: https://bugzilla.redhat.com/show_bug.cgi?id=2328985"
+    fi
+
     # None of these tests work rootless....
     if is_rootless; then
         # ...however, is that a genuine cast-in-stone limitation, or one
