@@ -102,6 +102,11 @@ var _ = Describe("Podman run", func() {
 		// be marked as failure of test.
 		if exitCode == 0 {
 			Expect(session.OutputToString()).To(ContainSubstring("aarch64"))
+		} else if exitCode == 139 {
+			// qemu-aarch64-static gets SIGSEGV on rawhide with qemu-user-static-9.2.0-0.3.rc1.fc42.x86_64
+			// https://bugzilla.redhat.com/show_bug.cgi?id=2330793
+			// Due the SIGSEGV we expect no output here
+			Expect(session.OutputToString()).To(Equal(""))
 		} else {
 			// crun says 'Exec', runc says 'exec'. Handle either.
 			Expect(session.ErrorToString()).To(ContainSubstring("xec format error"))
