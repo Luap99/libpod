@@ -59,7 +59,15 @@ var _ = Describe("Podman login and logout", func() {
 		setup := SystemExec("cp", []string{filepath.Join(certPath, "domain.crt"), filepath.Join(certDirPath, "ca.crt")})
 		setup.WaitWithDefaultTimeout()
 
+		// FIXME: #24804 pasta bug that only happens on rawhide,
+		// work around for now until we find the cause.
+		network := "default"
+		host := GetHostDistributionInfo()
+		if host.Distribution == "fedora" && host.Version == "42" {
+			network = "slirp4netns"
+		}
 		session := podmanTest.Podman([]string{"run", "-d", "-p", strings.Join([]string{strconv.Itoa(port), strconv.Itoa(port)}, ":"),
+			"--network", network,
 			"-e", strings.Join([]string{"REGISTRY_HTTP_ADDR=0.0.0.0", strconv.Itoa(port)}, ":"), "--name", "registry", "-v",
 			strings.Join([]string{authPath, "/auth:Z"}, ":"), "-e", "REGISTRY_AUTH=htpasswd", "-e",
 			"REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm", "-e", "REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd",
