@@ -528,10 +528,10 @@ func AutocompleteArtifactAdd(cmd *cobra.Command, args []string, toComplete strin
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 	if len(args) == 0 {
-		// first argument accepts file path
-		return nil, cobra.ShellCompDirectiveDefault
+		// first argument accepts the name reference
+		return getArtifacts(cmd, toComplete)
 	}
-	return getArtifacts(cmd, toComplete)
+	return nil, cobra.ShellCompDirectiveDefault
 }
 
 // AutocompleteContainers - Autocomplete all container names.
