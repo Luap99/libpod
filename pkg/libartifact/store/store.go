@@ -30,6 +30,8 @@ var (
 	// that describes the store's contents
 	indexName   = "index.json"
 	emptyStanza = []byte("{}")
+
+	ErrEmptyArtifactName = errors.New("artifact name cannot be empty")
 )
 
 type ArtifactStore struct {
@@ -78,6 +80,9 @@ func NewArtifactStore(storePath string, sc *types.SystemContext) (*ArtifactStore
 
 // Remove an artifact from the local artifact store
 func (as ArtifactStore) Remove(ctx context.Context, sys *types.SystemContext, name string) error {
+	if len(name) == 0 {
+		return ErrEmptyArtifactName
+	}
 	ir, err := layout.NewReference(as.storePath, name)
 	if err != nil {
 		return err
@@ -87,6 +92,9 @@ func (as ArtifactStore) Remove(ctx context.Context, sys *types.SystemContext, na
 
 // Inspect an artifact in a local store
 func (as ArtifactStore) Inspect(ctx context.Context, name string) (*libartifact.Artifact, error) {
+	if len(name) == 0 {
+		return nil, ErrEmptyArtifactName
+	}
 	artifacts, err := as.getArtifacts(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -101,6 +109,9 @@ func (as ArtifactStore) List(ctx context.Context) (libartifact.ArtifactList, err
 
 // Pull an artifact from an image registry to a local store
 func (as ArtifactStore) Pull(ctx context.Context, name string, opts libimage.CopyOptions) error {
+	if len(name) == 0 {
+		return ErrEmptyArtifactName
+	}
 	srcRef, err := alltransports.ParseImageName(fmt.Sprintf("docker://%s", name))
 	if err != nil {
 		return err
@@ -122,6 +133,9 @@ func (as ArtifactStore) Pull(ctx context.Context, name string, opts libimage.Cop
 
 // Push an artifact to an image registry
 func (as ArtifactStore) Push(ctx context.Context, src, dest string, opts libimage.CopyOptions) error {
+	if len(dest) == 0 {
+		return ErrEmptyArtifactName
+	}
 	destRef, err := alltransports.ParseImageName(fmt.Sprintf("docker://%s", dest))
 	if err != nil {
 		return err
@@ -144,6 +158,10 @@ func (as ArtifactStore) Push(ctx context.Context, src, dest string, opts libimag
 // Add takes one or more local files and adds them to the local artifact store.  The empty
 // string input is for possible custom artifact types.
 func (as ArtifactStore) Add(ctx context.Context, dest string, paths []string, _ string) (*digest.Digest, error) {
+	if len(dest) == 0 {
+		return nil, ErrEmptyArtifactName
+	}
+
 	artifactManifestLayers := make([]specV1.Descriptor, 0)
 
 	// Check if artifact already exists
