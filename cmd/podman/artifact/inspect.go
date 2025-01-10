@@ -36,12 +36,9 @@ func init() {
 	flags := inspectCmd.Flags()
 	formatFlagName := "format"
 	flags.StringVar(&inspectFlag.format, formatFlagName, "", "Format volume output using JSON or a Go template")
+	_ = inspectCmd.RegisterFlagCompletionFunc(formatFlagName, common.AutocompleteFormat(&entities.ArtifactInspectReport{}))
 	remoteFlagName := "remote"
 	flags.BoolVar(&inspectFlag.remote, remoteFlagName, false, "Inspect the image on a container image registry")
-
-	// TODO When the inspect structure has been defined, we need to uncommand and redirect this.  Reminder, this
-	// will also need to be reflected in the podman-artifact-inspect man page
-	// _ = inspectCmd.RegisterFlagCompletionFunc(formatFlagName, common.AutocompleteFormat(&machine.InspectInfo{}))
 }
 
 func inspect(cmd *cobra.Command, args []string) error {

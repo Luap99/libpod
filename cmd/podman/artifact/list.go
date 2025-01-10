@@ -6,6 +6,7 @@ import (
 
 	"github.com/containers/common/pkg/completion"
 	"github.com/containers/common/pkg/report"
+	"github.com/containers/podman/v5/cmd/podman/common"
 	"github.com/containers/podman/v5/cmd/podman/registry"
 	"github.com/containers/podman/v5/pkg/domain/entities"
 	"github.com/spf13/cobra"
@@ -46,10 +47,7 @@ func init() {
 	flags := ListCmd.Flags()
 	formatFlagName := "format"
 	flags.StringVar(&listFlag.format, formatFlagName, defaultArtifactListOutputFormat, "Format volume output using JSON or a Go template")
-
-	// TODO When the inspect structure has been defined, we need to uncomment and redirect this.  Reminder, this
-	// will also need to be reflected in the podman-artifact-inspect man page
-	// _ = inspectCmd.RegisterFlagCompletionFunc(formatFlagName, common.AutocompleteFormat(&machine.InspectInfo{}))
+	_ = ListCmd.RegisterFlagCompletionFunc(formatFlagName, common.AutocompleteFormat(&artifactListOutput{}))
 }
 
 func list(cmd *cobra.Command, _ []string) error {
