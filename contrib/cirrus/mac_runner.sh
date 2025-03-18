@@ -43,4 +43,7 @@ case "$TEST_FLAVOR" in
         exit 1
 esac
 
+# Use the podman binary installed from the installer in mac_setup.sh
+export PODMAN_BINARY="/opt/podman/bin/podman"
+
 make localmachine 2>&1 | logformatter

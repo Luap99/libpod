@@ -51,3 +51,6 @@ cp pkg/machine/ocipull/policy.json /$HOME/ci/.config/containers/
 # takes over.
 git config --file "$HOME/ci/.gitconfig" \
   --add safe.directory $CIRRUS_WORKING_DIR
+
+# Use the installer from the build task and install it so we test the real thing.
+sudo installer -pkg contrib/pkginstaller/out/podman-installer-macos-arm64.pkg -target /
