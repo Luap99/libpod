@@ -3,6 +3,7 @@
 package libpod
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"go.podman.io/common/libnetwork/types"
 	"go.podman.io/podman/v6/libpod/define"
+	"golang.org/x/sys/unix"
 )
 
 // Timeout before declaring that runtime has failed to kill a given
@@ -32,9 +34,9 @@ func bindPorts(ports []types.PortMapping) ([]*os.File, error) {
 	var files []*os.File
 	sctpWarning := true
 	for _, port := range ports {
-		isV6 := net.ParseIP(port.HostIP).To4() == nil
-		if port.HostIP == "" {
-			isV6 = false
+		isV6 := false
+		if port.HostIP != "" {
+			isV6 = net.ParseIP(port.HostIP).To4() == nil
 		}
 		protocols := strings.SplitSeq(port.Protocol, ",")
 		for protocol := range protocols {
@@ -42,7 +44,7 @@ func bindPorts(ports []types.PortMapping) ([]*os.File, error) {
 				f, err := bindPort(protocol, port.HostIP, port.HostPort+i, isV6, &sctpWarning)
 				if err != nil {
 					// close all open ports in case of early error so we do not
-					// rely garbage  collector to close them
+					// rely on the garbage collector to close them
 					for _, f := range files {
 						f.Close()
 					}
@@ -57,84 +59,96 @@ func bindPorts(ports []types.PortMapping) ([]*os.File, error) {
 	return files, nil
 }
 
+// bindPort reserves a port on the host using socket+bind without listen.
+// Dual-stack bind by default unless hostIP is specified.
 func bindPort(protocol, hostIP string, port uint16, isV6 bool, sctpWarning *bool) (*os.File, error) {
-	var file *os.File
 	switch protocol {
-	case "udp":
-		var (
-			addr *net.UDPAddr
-			err  error
-		)
-		if isV6 {
-			addr, err = net.ResolveUDPAddr("udp6", fmt.Sprintf("[%s]:%d", hostIP, port))
-		} else {
-			addr, err = net.ResolveUDPAddr("udp4", fmt.Sprintf("%s:%d", hostIP, port))
-		}
-		if err != nil {
-			return nil, fmt.Errorf("cannot resolve the UDP address: %w", err)
+	case "tcp", "udp":
+		sockType := unix.SOCK_STREAM
+		if protocol == "udp" {
+			sockType = unix.SOCK_DGRAM
 		}
 
-		proto := "udp4"
-		if isV6 {
-			proto = "udp6"
-		}
-		server, err := net.ListenUDP(proto, addr)
+		domain, sa, err := buildSockAddr(hostIP, port, isV6)
 		if err != nil {
-			return nil, fmt.Errorf("cannot listen on the UDP port: %w", err)
-		}
-		file, err = server.File()
-		if err != nil {
-			return nil, fmt.Errorf("cannot get file for UDP socket: %w", err)
-		}
-		// close the listener
-		// note that this does not affect the fd, see the godoc for server.File()
-		err = server.Close()
-		if err != nil {
-			logrus.Warnf("Failed to close connection: %v", err)
+			return nil, err
 		}
 
-	case "tcp":
-		var (
-			addr *net.TCPAddr
-			err  error
-		)
-		if isV6 {
-			addr, err = net.ResolveTCPAddr("tcp6", fmt.Sprintf("[%s]:%d", hostIP, port))
-		} else {
-			addr, err = net.ResolveTCPAddr("tcp4", fmt.Sprintf("%s:%d", hostIP, port))
-		}
+		fd, err := unix.Socket(domain, sockType|unix.SOCK_CLOEXEC, 0)
 		if err != nil {
-			return nil, fmt.Errorf("cannot resolve the TCP address: %w", err)
+			// If hostIP == "" and IPv6 is not supported, fall back to IPv4
+			if hostIP == "" && errors.Is(err, unix.EAFNOSUPPORT) {
+				return bindPortV4Fallback(protocol, sockType, port)
+			}
+			return nil, fmt.Errorf("cannot create socket for %s port %d: %w", protocol, port, err)
 		}
 
-		proto := "tcp4"
-		if isV6 {
-			proto = "tcp6"
+		if err := setupSocketOpts(fd, domain, hostIP); err != nil {
+			unix.Close(fd)
+			return nil, err
 		}
-		server, err := net.ListenTCP(proto, addr)
-		if err != nil {
-			return nil, fmt.Errorf("cannot listen on the TCP port: %w", err)
+
+		if err := unix.Bind(fd, sa); err != nil {
+			unix.Close(fd)
+			return nil, fmt.Errorf("cannot bind %s port %d: %w", protocol, port, err)
 		}
-		file, err = server.File()
-		if err != nil {
-			return nil, fmt.Errorf("cannot get file for TCP socket: %w", err)
-		}
-		// close the listener
-		// note that this does not affect the fd, see the godoc for server.File()
-		err = server.Close()
-		if err != nil {
-			logrus.Warnf("Failed to close connection: %v", err)
-		}
+
+		return os.NewFile(uintptr(fd), fmt.Sprintf("reservation-%s-%d", protocol, port)), nil
 
 	case "sctp":
 		if *sctpWarning {
 			logrus.Info("Port reservation for SCTP is not supported")
 			*sctpWarning = false
 		}
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("unknown protocol %s", protocol)
 	}
-	return file, nil
+}
+
+func buildSockAddr(hostIP string, port uint16, isV6 bool) (int, unix.Sockaddr, error) {
+	// default behaviour when hostIP == "" is to bind dual-stack
+	// if hostIP != ""; determine the stack using the address specified
+	if hostIP == "" {
+		return unix.AF_INET6, &unix.SockaddrInet6{Port: int(port)}, nil
+	}
+	ip := net.ParseIP(hostIP)
+	if ip == nil {
+		return 0, nil, fmt.Errorf("invalid IP address: %s", hostIP)
+	}
+	if isV6 {
+		sa := &unix.SockaddrInet6{Port: int(port)}
+		copy(sa.Addr[:], ip.To16())
+		return unix.AF_INET6, sa, nil
+	}
+	sa := &unix.SockaddrInet4{Port: int(port)}
+	copy(sa.Addr[:], ip.To4())
+	return unix.AF_INET, sa, nil
+}
+
+func setupSocketOpts(fd, domain int, hostIP string) error {
+	if domain == unix.AF_INET6 {
+		v6only := 1
+		if hostIP == "" {
+			v6only = 0
+		}
+		if err := unix.SetsockoptInt(fd, unix.IPPROTO_IPV6, unix.IPV6_V6ONLY, v6only); err != nil {
+			return fmt.Errorf("cannot set IPV6_V6ONLY: %w", err)
+		}
+	}
+	return nil
+}
+
+func bindPortV4Fallback(protocol string, sockType int, port uint16) (*os.File, error) {
+	fd, err := unix.Socket(unix.AF_INET, sockType|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create IPv4 fallback socket for %s port %d: %w", protocol, port, err)
+	}
+	if err := unix.Bind(fd, &unix.SockaddrInet4{Port: int(port)}); err != nil {
+		unix.Close(fd)
+		return nil, fmt.Errorf("cannot bind %s port %d (IPv4 fallback): %w", protocol, port, err)
+	}
+	return os.NewFile(uintptr(fd), fmt.Sprintf("reservation-%s-%d", protocol, port)), nil
 }
 
 func getOCIRuntimeError(name, runtimeMsg string) error {

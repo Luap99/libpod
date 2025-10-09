@@ -341,9 +341,11 @@ function run_pod_etc_hosts_test(){
         # flush the firewall rule here to break port forwarding
         nft delete table inet netavark              || true
 
-        # check that we cannot curl (timeout after 1 sec)
+        # check that we cannot curl: expect either connection refused (7)
+        # or timeout (28) depending on whether the port reservation socket
+        # is in listen state
         run curl --max-time 1 -s $SERVER/index.txt
-        assert $status -eq 28 "curl did not time out"
+        assert "$status" -ne 0 "curl should fail after flushing nftables"
     fi
 
     # reload the network to recreate the nftables rules
@@ -1136,6 +1138,24 @@ EOF
     run_podman rm $ctrname
     run_podman network rm $netname1
     run_podman network rm $netname2
+}
+
+# Refer https://github.com/containers/netavark/issues/1338
+# bats test_tags=ci:parallel
+@test "podman run - dual-stack conflicts with explicit wildcards" {
+    myport=$(random_free_port)
+    cname1="c1-$(safename)"
+
+    run_podman run -d --name $cname1 -p $myport:8080 $IMAGE sleep inf
+    cid1="$output"
+
+    run_podman 126 run --rm -p 0.0.0.0:$myport:8080 $IMAGE true
+    assert "$output" =~ "address already in use" "explicit IPv4 wildcard should conflict with dual-stack"
+
+    run_podman 126 run --rm -p [::]:$myport:8080 $IMAGE true
+    assert "$output" =~ "address already in use" "explicit IPv6 wildcard should conflict with dual-stack"
+
+    run_podman rm -f -t0 $cid1
 }
 
 # vim: filetype=sh
