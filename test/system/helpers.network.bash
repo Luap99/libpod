@@ -30,58 +30,6 @@ function skip_if_no_ipv6() {
     fi
 }
 
-### procfs access ##############################################################
-
-# ipv6_to_procfs() - RFC 5952 IPv6 address text representation to procfs format
-# $1:	Address in any notation described by RFC 5952
-function ipv6_to_procfs() {
-    local addr="${1}"
-
-    # Add leading zero if missing
-    case ${addr} in
-        "::"*) addr=0"${addr}" ;;
-    esac
-
-    # Double colon can mean any number of all-zero fields. Expand to fill
-    # as many colons as are missing. (This will not be a valid IPv6 form,
-    # but we don't need it for long). E.g., 0::1 -> 0:::::::1
-    case ${addr} in
-        *"::"*)
-            # All the colons in the address
-            local colons
-            colons=$(tr -dc : <<<$addr)
-            # subtract those from a string of eight colons; this gives us
-            # a string of two to six colons...
-            local pad
-            pad=$(sed -e "s/$colons//" <<<":::::::")
-            # ...which we then inject in place of the double colon.
-            addr=$(sed -e "s/::/::$pad/" <<<$addr)
-            ;;
-    esac
-
-    # Print as a contiguous string of zero-filled 16-bit words
-    # (The additional ":" below is needed because 'read -d x' actually
-    # means "x is a TERMINATOR, not a delimiter")
-    local group
-    while read -d : group; do
-        printf "%04X" "0x${group:-0}"
-    done <<<"${addr}:"
-}
-
-# __ipv4_to_procfs() - Print bytes in hexadecimal notation reversing arguments
-# $@:	IPv4 address as separate bytes
-function __ipv4_to_procfs() {
-    printf "%02X%02X%02X%02X" ${4} ${3} ${2} ${1}
-}
-
-# ipv4_to_procfs() - IPv4 address representation to big-endian procfs format
-# $1:	Text representation of IPv4 address
-function ipv4_to_procfs() {
-    IFS='.' read -r o1 o2 o3 o4 <<< $1
-    __ipv4_to_procfs $o1 $o2 $o3 $o4
-}
-
-
 ### Addresses, Routes, Links ###################################################
 
 # ipv4_get_addr_global() - Print first global IPv4 address reported by netlink
@@ -259,7 +207,7 @@ function unreserve_port() {
     local port=$1
 
     local lockfile=$PORT_LOCK_DIR/$port
-    -e $lockfile || die "Cannot unreserve non-reserved port $port"
+    test -e $lockfile || die "Cannot unreserve non-reserved port $port"
     assert "$(< $lockfile)" = "$BATS_SUITE_TEST_NUMBER" \
            "Port $port is not reserved by this test"
     rm -f $lockfile
@@ -348,32 +296,10 @@ function port_is_bound() {
         local proto="tcp"
     fi
 
-    # /proc/net/tcp is insufficient: it does not show some rootless ports.
-    # ss does, so check it first.
-    run ss -${proto:0:1}nlH sport = $port
-    if [[ -n "$output" ]]; then
-        return
-    fi
-
-    port=$(printf %04X ${port})
-    case "${address}" in
-    *":"*)
-        grep -e "^[^:]*: $(ipv6_to_procfs "${address}"):${port} .*" \
-             -e "^[^:]*: $(ipv6_to_procfs "::0"):${port} .*"        \
-             -q "/proc/net/${proto}6"
-        ;;
-    *"."*)
-        grep -e "^[^:]*: $(ipv4_to_procfs "${address}"):${port}"    \
-             -e "^[^:]*: $(ipv4_to_procfs "0.0.0.0"):${port}"       \
-             -e "^[^:]*: $(ipv4_to_procfs "127.0.0.1"):${port}"     \
-             -q "/proc/net/${proto}"
-        ;;
-    *)
-        # No address: check both IPv4 and IPv6, for any bound address
-        grep "^[^:]*: [^:]*:${port} .*" -q "/proc/net/${proto}6" || \
-        grep "^[^:]*: [^:]*:${port} .*" -q "/proc/net/${proto}"
-        ;;
-    esac
+    # Use ss to check the local ports
+    run -0 ss -${proto:0:1}nlH state all sport = $port
+    # grep for exact address:port match or for "*:port" which means the port is bound to all addresses and hence bound for any address
+    grep -q "$address:$port" <<<"$output" || grep -q "*:$port" <<<"$output"
 }
 
 # port_is_free() - Check if TCP or UDP port is free to bind for a given address
