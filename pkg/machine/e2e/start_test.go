@@ -25,7 +25,7 @@ var _ = Describe("podman machine start", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(startSession).To(Exit(0))
 
-		info, ec, err := mb.toQemuInspectInfo()
+		info, ec, err := mb.toInspectInfo()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ec).To(BeZero())
 		Expect(info[0].State).To(Equal(define.Running))
@@ -72,7 +72,7 @@ var _ = Describe("podman machine start", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(startSession).To(Exit(0))
 
-		info, ec, err := mb.toQemuInspectInfo()
+		info, ec, err := mb.toInspectInfo()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ec).To(BeZero())
 		Expect(info[0].State).To(Equal(define.Running))
