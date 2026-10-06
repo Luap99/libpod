@@ -91,7 +91,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: '1.26'
           cache: false
 
       - name: Read golangci-lint version from Makefile
@@ -196,7 +196,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: '1.26'
           cache: false
       - name: Run cross build
         run: make cross
@@ -243,7 +243,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: '1.26'
           cache: true
 
       - name: Install build dependencies
@@ -303,7 +303,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: '1.26'
           cache: true
 
       - name: Build core binaries
@@ -451,7 +451,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: '1.26'
           cache: false
       - name: "Install gvproxy"
         run: |
@@ -513,7 +513,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: '1.26'
           cache: true
 
       - name: Run unit tests
@@ -546,7 +546,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: '1.26'
           cache: true
 
       - name: Build podman
@@ -592,7 +592,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: '1.26'
           cache: true
 
       - name: Diagnostics
@@ -684,7 +684,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: '1.26'
           cache: true
 
       - name: Pre-clean machine state
